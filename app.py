@@ -2,7 +2,7 @@ import os, sqlite3, datetime, requests, threading, time, re
 from flask import Flask, render_template, request, redirect, url_for, jsonify, session
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
-from database import init_db
+from database import init_db, DB_PATH
 
 app = Flask(__name__)
 # SEGURANÇA MÁXIMA: Chave dinâmica se não houver variável de ambiente
@@ -21,7 +21,7 @@ def login_required(f):
 def login():
     if request.method == 'POST':
         u, p = request.form['username'], request.form['password']
-        conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor()
+        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
         c.execute("SELECT id, password_hash FROM users WHERE username = ?", (u,))
         row = c.fetchone(); conn.close()
         if row and check_password_hash(row[1], p):
@@ -35,7 +35,7 @@ def register():
     if request.method == 'POST':
         u, p = request.form['username'], request.form['password']
         hash_p = generate_password_hash(p)
-        conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor()
+        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
         try:
             c.execute("INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)", (u, hash_p, datetime.date.today().strftime("%Y-%m-%d")))
             uid = c.lastrowid
@@ -57,7 +57,7 @@ def background_sync_task(uid):
     global sync_state
     sync_state['is_syncing'] = True
     try:
-        conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor()
+        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
         c.execute("SELECT id, nome_item FROM inventory WHERE status = 'Ativo' AND user_id = ?", (uid,))
         rows = c.fetchall(); grouped = {}
         for r in rows:
@@ -86,7 +86,7 @@ def background_sync_task(uid):
 
 # --- VIEWS ---
 def get_view_data(tab, uid):
-    conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor()
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT id, nome, taxa FROM plataformas WHERE user_id = ?", (uid,)); plats = [{'id': r[0], 'nome': r[1], 'taxa': r[2]} for r in c.fetchall()]
     c.execute("SELECT id, nome FROM categorias WHERE user_id = ?", (uid,)); cats = [{'id': r[0], 'nome': r[1]} for r in c.fetchall()]
     c.execute("SELECT id, nome FROM sites_bets WHERE user_id = ?", (uid,)); bets = [{'id': r[0], 'nome': r[1]} for r in c.fetchall()]
@@ -95,6 +95,7 @@ def get_view_data(tab, uid):
     c.execute("SELECT categoria, SUM(CASE WHEN preco_mercado > 0 THEN preco_mercado ELSE preco_compra END) FROM inventory WHERE status='Ativo' AND user_id = ? GROUP BY categoria", (uid,))
     cat_saldos = c.fetchall(); total_caixa = sum(r[1] for r in cat_saldos)
     chart_cat_labels = [r[0] for r in cat_saldos]; chart_cat_data = [round(r[1], 2) for r in cat_saldos]
+    saldos_plataformas = [{'nome': r[0], 'valor': f"{r[1]:.2f}"} for r in cat_saldos]
     
     c.execute("SELECT plataforma, SUM(CASE WHEN preco_mercado > 0 THEN preco_mercado ELSE preco_compra END) FROM inventory WHERE status='Ativo' AND user_id = ? GROUP BY plataforma", (uid,))
     plat_saldos = c.fetchall()
@@ -178,7 +179,7 @@ def fetch_inv():
     try:
         r = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}); data = r.json()
         if not data.get('success'): return jsonify({'error': 'Privado ou erro.'})
-        conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor()
+        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
         c.execute("SELECT steam_asset_id FROM inventory WHERE user_id = ?", (session['user_id'],))
         exists = {row[0] for row in c.fetchall()}; conn.close()
         desc = {f"{d['classid']}_{d['instanceid']}": d for d in data.get('descriptions', [])}; inv = []
@@ -192,7 +193,7 @@ def fetch_inv():
 @app.route('/api/save_imported', methods=['POST'])
 @login_required
 def save_imp():
-    its = request.json.get('items', []); conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor()
+    its = request.json.get('items', []); conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     for i in its:
         c.execute("SELECT id FROM inventory WHERE steam_asset_id = ? AND user_id = ?", (i['asset_id'], session['user_id']))
         if not c.fetchone(): c.execute("INSERT INTO inventory (nome_item, categoria, plataforma, preco_compra, data_compra, user_id, steam_asset_id) VALUES (?,?,?,?,?,?,?)", (i['nome'], i['categoria'], i['plataforma'], float(i['custo']), i['data'], session['user_id'], i['asset_id']))
@@ -227,7 +228,7 @@ def sync_progress():
 def bulk_action():
     data = request.json; ids = data.get('ids', []); action = data.get('action'); value = data.get('value')
     if not ids: return jsonify({'success': False})
-    conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor(); ph = ','.join('?' for _ in ids)
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor(); ph = ','.join('?' for _ in ids)
     if action == 'target': c.execute(f"UPDATE inventory SET preco_alvo = ? WHERE id IN ({ph}) AND user_id = ?", [float(value)] + ids + [session['user_id']])
     elif action == 'roi':
         for i_id in ids:
@@ -238,11 +239,11 @@ def bulk_action():
 
 @app.route('/add', methods=['POST'])
 @login_required
-def add(): conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor(); c.execute("INSERT INTO inventory (nome_item, categoria, plataforma, preco_compra, data_compra, user_id) VALUES (?,?,?,?,?,?)", (request.form['nome_item'], request.form['categoria'], request.form['plataforma'], float(request.form['preco_compra']), request.form['data_compra'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
+def add(): conn = sqlite3.connect(DB_PATH); c = conn.cursor(); c.execute("INSERT INTO inventory (nome_item, categoria, plataforma, preco_compra, data_compra, user_id) VALUES (?,?,?,?,?,?)", (request.form['nome_item'], request.form['categoria'], request.form['plataforma'], float(request.form['preco_compra']), request.form['data_compra'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
 @app.route('/add_arsenal', methods=['POST'])
 @login_required
 def add_arsenal():
-    conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor(); e = int(request.form.get('estrelas_gasto', 0))
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor(); e = int(request.form.get('estrelas_gasto', 0))
     c.execute("SELECT valor FROM tesouraria WHERE chave = 'estrelas' AND user_id = ?", (session['user_id'],)); row = c.fetchone(); sa = float(row[0]) if row else 0.0
     c.execute("UPDATE tesouraria SET valor = ? WHERE chave = 'estrelas' AND user_id = ?", (max(0, sa - e), session['user_id']))
     c.execute("INSERT INTO inventory (nome_item, categoria, plataforma, preco_compra, data_compra, user_id) VALUES (?, ?, 'Arsenal', ?, ?, ?)", (request.form['nome_item'], request.form['categoria'], round(e * 0.4125, 2), request.form['data_compra'], session['user_id']))
@@ -254,39 +255,39 @@ def process_session():
     for i in range(len(ns)):
         if ns[i].strip(): vm = float(ms[i]) if ms[i] else 0.0; mt += vm; v.append({'n': ns[i].strip(), 'm': vm, 'c': cs[i]})
     if mt == 0 or not v: return redirect(request.referrer)
-    conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor(); dh = datetime.date.today().strftime("%Y-%m-%d")
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor(); dh = datetime.date.today().strftime("%Y-%m-%d")
     for i in v: c.execute("INSERT INTO inventory (nome_item, categoria, plataforma, preco_compra, data_compra, preco_mercado, user_id) VALUES (?,?,?,?,?,?,?)", (i['n'], i['c'], p, round(d_usd * (i['m'] / mt), 2), dh, i['m'], session['user_id']))
     conn.commit(); conn.close(); return redirect(url_for('catch_all', path='bets', success=1))
 @app.route('/edit_item', methods=['POST'])
 @login_required
-def edit_item(): conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor(); c.execute("UPDATE inventory SET nome_item=?, plataforma=?, preco_compra=?, data_compra=?, categoria=? WHERE id=? AND user_id=?", (request.form['nome_item'], request.form['plataforma'], float(request.form['preco_compra']), request.form['data_compra'], request.form['categoria'], request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
+def edit_item(): conn = sqlite3.connect(DB_PATH); c = conn.cursor(); c.execute("UPDATE inventory SET nome_item=?, plataforma=?, preco_compra=?, data_compra=?, categoria=? WHERE id=? AND user_id=?", (request.form['nome_item'], request.form['plataforma'], float(request.form['preco_compra']), request.form['data_compra'], request.form['categoria'], request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
 @app.route('/delete_item', methods=['POST'])
 @login_required
-def delete_item(): conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor(); c.execute("DELETE FROM inventory WHERE id=? AND user_id=?", (request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
+def delete_item(): conn = sqlite3.connect(DB_PATH); c = conn.cursor(); c.execute("DELETE FROM inventory WHERE id=? AND user_id=?", (request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
 @app.route('/sell', methods=['POST'])
 @login_required
 def sell():
-    conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor(); a, pv = float(request.form['preco_anuncio']), request.form['plataforma_venda']
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor(); a, pv = float(request.form['preco_anuncio']), request.form['plataforma_venda']
     c.execute("SELECT taxa FROM plataformas WHERE nome=? AND user_id=?", (pv, session['user_id'])); row = c.fetchone(); tx = float(row[0]) if row else 0.0
     c.execute("UPDATE inventory SET status='Vendido', preco_venda=?, plataforma_venda=?, data_venda=?, in_container=0 WHERE id=? AND user_id=?", (a*(1-(tx/100)), pv, request.form['data_venda'], request.form['item_id'], session['user_id']))
     conn.commit(); conn.close(); return redirect(request.referrer)
 @app.route('/toggle_container', methods=['POST'])
 @login_required
-def toggle_container(): conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor(); c.execute("UPDATE inventory SET in_container=? WHERE id=? AND user_id=?", (int(request.form['status']), request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
+def toggle_container(): conn = sqlite3.connect(DB_PATH); c = conn.cursor(); c.execute("UPDATE inventory SET in_container=? WHERE id=? AND user_id=?", (int(request.form['status']), request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
 @app.route('/edit_history', methods=['POST'])
 @login_required
 def edit_history():
-    conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor(); a, pv = float(request.form['preco_anuncio']), request.form['plataforma_venda']
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor(); a, pv = float(request.form['preco_anuncio']), request.form['plataforma_venda']
     c.execute("SELECT taxa FROM plataformas WHERE nome=? AND user_id=?", (pv, session['user_id'])); row = c.fetchone(); tx = float(row[0]) if row else 0.0
     c.execute("UPDATE inventory SET preco_compra=?, data_compra=?, preco_venda=?, data_venda=?, plataforma_venda=? WHERE id=? AND user_id=?", (float(request.form['preco_compra']), request.form['data_compra'], a*(1-(tx/100)), request.form['data_venda'], pv, request.form['id'], session['user_id']))
     conn.commit(); conn.close(); return redirect(request.referrer)
 @app.route('/edit_market_prices', methods=['POST'])
 @login_required
-def edit_market_prices(): conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor(); c.execute("UPDATE inventory SET preco_mercado=?, preco_alvo=? WHERE id=? AND user_id=?", (float(request.form['preco_mercado'] or 0), float(request.form['preco_alvo'] or 0), request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
+def edit_market_prices(): conn = sqlite3.connect(DB_PATH); c = conn.cursor(); c.execute("UPDATE inventory SET preco_mercado=?, preco_alvo=? WHERE id=? AND user_id=?", (float(request.form['preco_mercado'] or 0), float(request.form['preco_alvo'] or 0), request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
 @app.route('/update_treasury', methods=['POST'])
 @login_required
 def update_treasury():
-    conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor()
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     for k, v in request.form.items():
         if k in ['passes_arsenal', 'estrelas']:
             c.execute("SELECT COUNT(*) FROM tesouraria WHERE chave=? AND user_id=?", (k, session['user_id']))
@@ -296,34 +297,34 @@ def update_treasury():
 
 @app.route('/add_platform', methods=['POST'])
 @login_required
-def add_platform(): conn = sqlite3.connect('inventario_cs2.db'); c=conn.cursor(); c.execute("INSERT INTO plataformas (nome, taxa, user_id) VALUES (?,?,?)", (request.form['nome_plataforma'], float(request.form['taxa']), session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
+def add_platform(): conn = sqlite3.connect(DB_PATH); c=conn.cursor(); c.execute("INSERT INTO plataformas (nome, taxa, user_id) VALUES (?,?,?)", (request.form['nome_plataforma'], float(request.form['taxa']), session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
 @app.route('/edit_platform', methods=['POST'])
 @login_required
-def edit_platform(): conn = sqlite3.connect('inventario_cs2.db'); c=conn.cursor(); c.execute("UPDATE plataformas SET nome=?, taxa=? WHERE id=? AND user_id=?", (request.form['nome'], float(request.form['taxa']), request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
+def edit_platform(): conn = sqlite3.connect(DB_PATH); c=conn.cursor(); c.execute("UPDATE plataformas SET nome=?, taxa=? WHERE id=? AND user_id=?", (request.form['nome'], float(request.form['taxa']), request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
 @app.route('/delete_platform', methods=['POST'])
 @login_required
-def delete_platform(): conn = sqlite3.connect('inventario_cs2.db'); c=conn.cursor(); c.execute("DELETE FROM plataformas WHERE id=? AND user_id=?", (request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
+def delete_platform(): conn = sqlite3.connect(DB_PATH); c=conn.cursor(); c.execute("DELETE FROM plataformas WHERE id=? AND user_id=?", (request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
 @app.route('/toggle_tesouraria', methods=['POST'])
 @login_required
-def toggle_tesouraria(): conn = sqlite3.connect('inventario_cs2.db'); c=conn.cursor(); c.execute("UPDATE plataformas SET mostrar_tesouraria = CASE WHEN mostrar_tesouraria=1 THEN 0 ELSE 1 END WHERE id=? AND user_id=?", (request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
+def toggle_tesouraria(): conn = sqlite3.connect(DB_PATH); c=conn.cursor(); c.execute("UPDATE plataformas SET mostrar_tesouraria = CASE WHEN mostrar_tesouraria=1 THEN 0 ELSE 1 END WHERE id=? AND user_id=?", (request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
 
 @app.route('/add_categoria', methods=['POST'])
 @login_required
-def add_cat(): conn = sqlite3.connect('inventario_cs2.db'); c=conn.cursor(); c.execute("INSERT INTO categorias (nome, user_id) VALUES (?,?)", (request.form['nome_categoria'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
+def add_cat(): conn = sqlite3.connect(DB_PATH); c=conn.cursor(); c.execute("INSERT INTO categorias (nome, user_id) VALUES (?,?)", (request.form['nome_categoria'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
 @app.route('/edit_categoria', methods=['POST'])
 @login_required
-def edit_cat(): conn = sqlite3.connect('inventario_cs2.db'); c = conn.cursor(); c.execute("SELECT nome FROM categorias WHERE id=? AND user_id=?", (request.form['id'], session['user_id'])); vn = c.fetchone()[0]; c.execute("UPDATE categorias SET nome=? WHERE id=? AND user_id=?", (request.form['nome'], request.form['id'], session['user_id'])); c.execute("UPDATE inventory SET categoria=? WHERE categoria=? AND user_id=?", (request.form['nome'], vn, session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
+def edit_cat(): conn = sqlite3.connect(DB_PATH); c = conn.cursor(); c.execute("SELECT nome FROM categorias WHERE id=? AND user_id=?", (request.form['id'], session['user_id'])); vn = c.fetchone()[0]; c.execute("UPDATE categorias SET nome=? WHERE id=? AND user_id=?", (request.form['nome'], request.form['id'], session['user_id'])); c.execute("UPDATE inventory SET categoria=? WHERE categoria=? AND user_id=?", (request.form['nome'], vn, session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
 @app.route('/delete_categoria', methods=['POST'])
 @login_required
-def del_cat(): conn = sqlite3.connect('inventario_cs2.db'); c=conn.cursor(); c.execute("DELETE FROM categorias WHERE id=? AND user_id=?", (request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
+def del_cat(): conn = sqlite3.connect(DB_PATH); c=conn.cursor(); c.execute("DELETE FROM categorias WHERE id=? AND user_id=?", (request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
 
 @app.route('/add_site_bet', methods=['POST'])
 @login_required
-def add_bet(): conn = sqlite3.connect('inventario_cs2.db'); c=conn.cursor(); c.execute("INSERT INTO sites_bets (nome, user_id) VALUES (?,?)", (request.form['nome'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
+def add_bet(): conn = sqlite3.connect(DB_PATH); c=conn.cursor(); c.execute("INSERT INTO sites_bets (nome, user_id) VALUES (?,?)", (request.form['nome'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
 @app.route('/edit_site_bet', methods=['POST'])
 @login_required
-def edit_bet(): conn = sqlite3.connect('inventario_cs2.db'); c=conn.cursor(); c.execute("UPDATE sites_bets SET nome=? WHERE id=? AND user_id=?", (request.form['nome'], request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
+def edit_bet(): conn = sqlite3.connect(DB_PATH); c=conn.cursor(); c.execute("UPDATE sites_bets SET nome=? WHERE id=? AND user_id=?", (request.form['nome'], request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
 @app.route('/delete_site_bet', methods=['POST'])
-def del_bet(): conn = sqlite3.connect('inventario_cs2.db'); c=conn.cursor(); c.execute("DELETE FROM sites_bets WHERE id=? AND user_id=?", (request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
+def del_bet(): conn = sqlite3.connect(DB_PATH); c=conn.cursor(); c.execute("DELETE FROM sites_bets WHERE id=? AND user_id=?", (request.form['id'], session['user_id'])); conn.commit(); conn.close(); return redirect(request.referrer)
 
 if __name__ == '__main__': app.run(debug=True)
