@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LootLedger CS2 | SaaS</title>
+    <link rel="icon" type="image/jpeg" href="{{ url_for('static', filename='CS.jpg') }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background-color: #0f172a; color: #e2e8f0; font-family: 'Inter', sans-serif; }
+        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        .sortable-th { cursor: pointer; user-select: none; }
+        .sortable-th:hover { color: #60a5fa; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+    <header class="bg-gray-800 shadow-md p-4 flex justify-between items-center border-b border-gray-700 shrink-0 z-20">
+        <div class="flex items-center gap-3">
+            <img src="{{ url_for('static', filename='CS.jpg') }}" alt="Logo" class="h-8 rounded">
+            <h1 class="text-xl font-bold text-emerald-400">LootLedger <span class="text-xs text-gray-500 ml-2">SaaS Architecture</span></h1>
+        </div>
+        
+        <div class="flex items-center space-x-6 text-sm font-semibold text-gray-300 w-1/2 justify-end">
+            <button id="sync-btn" onclick="startBgSync()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-lg"><span class="text-lg">🔄</span> Att Mercado Atual</button>
+            <div id="sync-progress-box" class="hidden flex-1 bg-gray-900 border border-blue-600 rounded-lg p-1.5 flex items-center gap-3"><span class="text-[10px] text-blue-400 font-bold whitespace-nowrap animate-pulse">SINCRONIZANDO</span><div class="w-full bg-gray-800 rounded-full h-2 overflow-hidden flex-1"><div id="sync-bar" class="bg-blue-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div></div><span id="sync-text" class="text-[10px] text-gray-400 truncate w-32 text-right">0/0</span></div>
+            <span>Status: <span class="text-emerald-400">Online</span></span>
+            <a href="/logout" class="text-red-400 hover:text-white text-[10px] uppercase font-bold tracking-widest border border-red-900 px-2 py-1 rounded transition">Sair</a>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden relative">
+        <aside class="w-72 bg-gray-900 border-r border-gray-800 flex flex-col h-full overflow-y-auto z-10 shadow-2xl">
+            <div class="p-6 flex flex-col gap-2">
+                <h2 class="text-gray-400 uppercase text-xs tracking-wider font-bold mb-2">Navegação Principal</h2>
+                {% for nav in nav_links %}<a href="{{ nav.url }}" class="{{ nav.css_class }} py-2 px-4 rounded-lg transition text-sm">{{ nav.label }}</a>{% endfor %}
+            </div>
+            <div class="p-6 mt-auto border-t border-gray-800 bg-gray-900">
+                <h2 class="text-gray-400 uppercase text-xs tracking-wider font-bold mb-3">Tesouraria (Patrimônio)</h2>
+                <div class="bg-gray-800 p-3 rounded mb-4 border border-gray-700 text-sm shadow-inner">
+                    <div class="flex justify-between text-gray-300"><span>Lucro Trades:</span> <span class="font-bold {{ trade_profit_color }}">${{ trade_profit }}</span></div>
+                    <div class="flex justify-between text-gray-300"><span>ROI Realizado:</span> <span class="font-bold {{ trade_roi_color }}">{{ trade_roi }}%</span></div>
+                </div>
+                <form action="/update_treasury" method="POST" class="space-y-3 text-sm">
+                    <div class="text-[10px] uppercase font-bold text-gray-500 mb-1 border-b border-gray-700 pb-1 tracking-widest">Valor de Mercado (Ativos)</div>
+                    {% for cat in carteiras %}<div class="flex items-center justify-between group"><span class="text-gray-300 truncate w-32 group-hover:text-white transition" title="{{ cat.nome }}">{{ cat.nome }}</span><span class="text-emerald-400 font-mono">${{ cat.valor }}</span></div>{% endfor %}
+                    <div class="flex items-center justify-between border-t border-gray-700 pt-2 mt-2 font-bold text-white"><label>Patrimônio Alocado</label><span class="text-emerald-400">${{ total_caixa }}</span></div>
+                    <hr class="border-gray-700 my-4">
+                    <div class="text-[10px] uppercase font-bold text-gray-500 mb-1 tracking-widest">Itens Fixos / Moedas</div>
+                    <div class="flex items-center justify-between text-gray-400"><label>Passes Arsenal</label><input type="number" min="0" name="passes_arsenal" value="{{ passes_arsenal }}" class="w-16 bg-gray-800 border border-gray-700 rounded p-1 text-right text-white focus:outline-none"></div>
+                    <div class="flex items-center justify-between text-gray-400"><label>Estrelas Disp.</label><input type="number" min="0" name="estrelas" value="{{ estrelas }}" class="w-16 bg-gray-800 border border-gray-700 rounded p-1 text-right text-emerald-400 font-bold focus:outline-none"></div>
+                    <button type="submit" class="w-full bg-gray-800 border border-gray-600 hover:bg-gray-700 text-white text-xs py-2 rounded transition mt-4 font-bold uppercase tracking-wider">Salvar Modificações</button>
+                </form>
+            </div>
+        </aside>
+
+        <main class="flex-1 p-8 overflow-y-auto relative bg-[#0f172a]">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <script>
+        function toggleRow(id) { const el = document.getElementById(id); if(el) el.classList.toggle('hidden'); }
+        function calcRoi(el, cId) { let c = parseFloat(document.getElementById(cId).value)||0; let a = parseFloat(el.value)||0; if(c>0) document.getElementById('roialvo_'+cId.split('_')[1]).value = (((a-c)/c)*100).toFixed(2); }
+        function calcAlvo(el, cId) { let c = parseFloat(document.getElementById(cId).value)||0; let r = parseFloat(el.value)||0; if(c>0) document.getElementById('alvo_'+cId.split('_')[1]).value = (c*(1+(r/100))).toFixed(2); }
+        function startBgSync() { fetch('/api/start_sync', {method: 'POST'}); checkSyncStatus(); }
+        function checkSyncStatus() {
+            fetch('/api/sync_progress').then(r => r.json()).then(d => {
+                if(d.is_syncing) {
+                    document.getElementById('sync-btn').classList.add('hidden'); document.getElementById('sync-progress-box').classList.remove('hidden');
+                    document.getElementById('sync-bar').style.width = (d.total > 0 ? (d.current / d.total) * 100 : 0) + '%';
+                    document.getElementById('sync-text').innerText = `${d.current}/${d.total} (${d.item})`;
+                    setTimeout(checkSyncStatus, 2500);
+                } else { if(document.getElementById('sync-btn').classList.contains('hidden')) { document.getElementById('sync-text').innerText = "CONCLUÍDO!"; document.getElementById('sync-bar').style.width = '100%'; setTimeout(() => window.location.reload(), 1000); } }
+            });
+        }
+        document.addEventListener("DOMContentLoaded", checkSyncStatus);
+        function sortTable(tableId, n, isNumeric=false) {
+          var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+          table = document.getElementById(tableId); switching = true; dir = "asc"; 
+          while (switching) {
+            switching = false; rows = table.rows;
+            for (i = 1; i < (rows.length - 1); i+=2) {
+              shouldSwitch = false; x = rows[i].getElementsByTagName("TD")[n]; y = rows[i + 2].getElementsByTagName("TD")[n];
+              if(!x || !y) break;
+              let valX = x.innerText.toLowerCase().replace(/[^0-9.-]+/g,""); let valY = y.innerText.toLowerCase().replace(/[^0-9.-]+/g,"");
+              if (!isNumeric) { valX = x.innerText.toLowerCase(); valY = y.innerText.toLowerCase(); } else { valX = parseFloat(valX)||0; valY = parseFloat(valY)||0; }
+              if (dir == "asc") { if (valX > valY) { shouldSwitch = true; break; } } else if (dir == "desc") { if (valX < valY) { shouldSwitch = true; break; } }
+            }
+            if (shouldSwitch) { rows[i].parentNode.insertBefore(rows[i + 2], rows[i]); rows[i+1].parentNode.insertBefore(rows[i + 3], rows[i+1]); switching = true; switchcount ++; } else { if (switchcount == 0 && dir == "asc") { dir = "desc"; switching = true; } }
+          }
+        }
+    </script>
+</body>
+</html>

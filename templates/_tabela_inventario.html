@@ -1,0 +1,69 @@
+{% macro render_inventory_table(items_list, is_storage=False) %}
+<div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden shadow-xl mb-8">
+    <div class="bg-gray-900 p-4 border-b border-gray-700 flex justify-between items-center">
+        <h3 class="text-white font-bold text-lg">{% if is_storage %}📦 Storage Units{% else %}Ativos{% endif %}</h3>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse" id="inv-table-{{ 'storage' if is_storage else 'main' }}">
+            <thead>
+                <tr class="bg-gray-900/50 text-gray-400 text-[10px] uppercase tracking-widest">
+                    <th class="p-4 border-b border-gray-700 sortable-th" onclick="sortTable('inv-table-{{ 'storage' if is_storage else 'main' }}', 0, false)">Data ↕️</th>
+                    <th class="p-4 border-b border-gray-700">Item</th>
+                    <th class="p-4 border-b border-gray-700 sortable-th" onclick="sortTable('inv-table-{{ 'storage' if is_storage else 'main' }}', 2, true)">Custo ($) ↕️</th>
+                    <th class="p-4 border-b border-gray-700">Mercado ($)</th>
+                    <th class="p-4 border-b border-gray-700">Alvo ($)</th>
+                    <th class="p-4 border-b border-gray-700">L/P Aberto</th>
+                    <th class="p-4 border-b border-gray-700 text-right">Ações</th>
+                </tr>
+            </thead>
+            <tbody class="text-sm">
+                {% for i in items_list %}
+                <tr class="hover:bg-gray-700/30 transition border-b border-gray-700/50 group">
+                    <td class="p-4"><span class="{{ i.lock_css }} block mb-1">{{ i.lock_text }}</span><span class="text-[10px] text-gray-500">{{ i.data_str }}</span></td>
+                    <td class="p-4 font-semibold text-white">{{ i.nome }}<br><span class="bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded text-[10px]">{{ i.categoria }}</span></td>
+                    <td class="p-4 font-mono text-gray-300">${{ i.custo }} <br><span class="text-[10px] text-gray-500 uppercase">{{ i.plataforma }}</span></td>
+                    <td class="p-4 font-mono text-blue-300 font-bold">${{ i.mercado }}</td>
+                    <td class="p-4 font-mono text-purple-300 font-bold">${{ i.alvo }}</td>
+                    <td class="p-4 font-bold {{ i.lucro_css }}">${{ i.lucro_aberto }} <br><span class="text-[10px] font-normal uppercase opacity-75">({{ i.roi_aberto }}%)</span></td>
+                    <td class="p-4 text-right flex flex-col items-end gap-1.5">
+                        <div class="flex gap-1.5">
+                            <button onclick="toggleRow('edit-item-{{ i.id }}')" class="bg-gray-700 text-gray-300 px-2 py-1 rounded text-[10px] font-bold uppercase transition">✏️ Edit</button>
+                            <button onclick="toggleRow('edit-prices-{{ i.id }}')" class="bg-purple-600/20 text-purple-400 border border-purple-800 px-2 py-1 rounded text-[10px] font-bold uppercase transition">🎯 Alvo</button>
+                            <button onclick="toggleRow('sell-{{ i.id }}')" class="bg-blue-600/20 text-blue-400 border border-blue-800 px-2 py-1 rounded text-[10px] font-bold uppercase transition">💰 Vender</button>
+                        </div>
+                    </td>
+                </tr>
+
+                <tr id="edit-prices-{{ i.id }}" class="hidden bg-gray-900/80 border-b border-gray-700">
+                    <td colspan="7" class="p-4 border-l-4 border-purple-500 shadow-inner">
+                        <form action="/edit_market_prices" method="POST" class="flex flex-wrap gap-4 items-end justify-end">
+                            <input type="hidden" name="id" value="{{ i.id }}">
+                            <input type="hidden" id="custo_ref_{{ i.id }}" value="{{ i.custo_raw }}">
+                            <div><label class="block text-[10px] text-gray-400 uppercase tracking-widest mb-1">Mercado ($)</label><input type="number" step="0.01" name="preco_mercado" value="{{ i.mercado_raw }}" class="w-32 bg-gray-800 border border-gray-600 rounded p-2 text-white text-xs"></div>
+                            <div><label class="block text-[10px] text-purple-400 uppercase font-bold mb-1">Preço Alvo ($)</label><input type="number" step="0.01" id="alvo_{{ i.id }}" name="preco_alvo" value="{{ i.alvo_raw }}" oninput="calcRoi(this, 'custo_ref_{{ i.id }}')" class="w-32 bg-gray-800 border border-purple-600 rounded p-2 text-white text-xs font-bold focus:outline-none"></div>
+                            <div><label class="block text-[10px] text-purple-400 uppercase font-bold mb-1">ROI Alvo (%)</label><input type="number" step="0.01" id="roialvo_{{ i.id }}" value="{{ i.roi_alvo_raw }}" oninput="calcAlvo(this, 'custo_ref_{{ i.id }}')" class="w-24 bg-gray-800 border border-purple-600 rounded p-2 text-white text-xs font-bold focus:outline-none"></div>
+                            <button type="submit" class="bg-purple-600 text-white px-6 py-2 rounded text-xs font-bold uppercase hover:bg-purple-500 transition shadow-lg">Salvar</button>
+                        </form>
+                    </td>
+                </tr>
+
+                <tr id="edit-item-{{ i.id }}" class="hidden bg-gray-900/80 border-b border-gray-700">
+                    <td colspan="7" class="p-4 border-l-4 border-gray-500 shadow-inner">
+                        <form action="/edit_item" method="POST" class="flex flex-wrap gap-4 items-end justify-end">
+                            <input type="hidden" name="id" value="{{ i.id }}">
+                            <div><label class="block text-[10px] text-gray-400 uppercase tracking-widest mb-1">Nome</label><input type="text" name="nome_item" value="{{ i.nome }}" class="w-64 bg-gray-800 border border-gray-600 rounded p-2 text-white text-xs"></div>
+                            <div><label class="block text-[10px] text-gray-400 uppercase tracking-widest mb-1">Origem</label><select name="plataforma" class="w-32 bg-gray-800 border border-gray-600 rounded p-2 text-white text-xs">{% for p in dropdown_plataformas %}<option value="{{ p.nome }}" {% if p.nome == i.plataforma %}selected{% endif %}>{{ p.nome }}</option>{% endfor %}<option value="Arsenal" {% if i.plataforma == 'Arsenal' %}selected{% endif %}>Arsenal</option>{% for b in sites_bets %}<option value="{{ b.nome }}" {% if b.nome == i.plataforma %}selected{% endif %}>{{ b.nome }}</option>{% endfor %}</select></div>
+                            <div><label class="block text-[10px] text-gray-400 uppercase tracking-widest mb-1">Custo ($)</label><input type="number" step="0.01" name="preco_compra" value="{{ i.custo_raw }}" class="w-24 bg-gray-800 border border-gray-600 rounded p-2 text-white text-xs"></div>
+                            <div><label class="block text-[10px] text-gray-400 uppercase tracking-widest mb-1">Data</label><input type="date" name="data_compra" value="{{ i.d_compra_raw }}" class="w-32 bg-gray-800 border border-gray-600 rounded p-2 text-white text-xs"></div>
+                            <div><label class="block text-[10px] text-gray-400 uppercase tracking-widest mb-1">Categoria</label><select name="categoria" class="w-32 bg-gray-800 border border-gray-600 rounded p-2 text-white text-xs">{% for c in db_categorias %}<option value="{{ c.nome }}" {% if c.nome == i.categoria %}selected{% endif %}>{{ c.nome }}</option>{% endfor %}</select></div>
+                            <button type="submit" class="bg-gray-600 text-white px-4 py-2 rounded text-xs font-bold uppercase hover:bg-gray-500 transition">Salvar</button>
+                            <button type="submit" formaction="/delete_item" class="bg-red-600/20 text-red-400 border border-red-800 px-4 py-2 rounded text-xs font-bold hover:bg-red-600 hover:text-white" onclick="return confirm('Apagar?')">Excluir</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endmacro %}
