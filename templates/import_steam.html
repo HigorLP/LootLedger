@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex items-center gap-3 mb-6"><span class="text-3xl">📥</span><h2 class="text-2xl font-bold text-white tracking-wide">Importador Steam (Anti-Duplicatas)</h2></div>
+
+<div class="bg-gray-800 p-8 rounded-xl border border-blue-600/50 shadow-2xl mb-8 relative">
+    <div class="flex gap-4 items-center">
+        <input type="text" id="steam_url" placeholder="Link do Perfil ou SteamID64" class="flex-1 bg-gray-900 border border-gray-600 rounded-xl p-4 text-white text-lg focus:outline-none focus:border-blue-500">
+        <button onclick="fetchSteamInv()" id="btn-fetch-inv" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 px-10 rounded-xl shadow-lg transition uppercase tracking-widest">Buscar Skins</button>
+    </div>
+    <p id="steam_error" class="text-red-400 text-xs mt-3 hidden font-bold"></p>
+</div>
+
+<div id="bulk-actions" class="hidden bg-gray-800 p-6 rounded-xl border border-gray-600 shadow-2xl mb-6 sticky top-4 z-50">
+    <div class="flex flex-wrap items-end gap-6">
+        <div class="flex-1">
+            <label class="block text-[10px] text-gray-400 uppercase font-bold mb-2">Custo Padrão ($)</label>
+            <input type="number" step="0.01" id="bulk_cost" class="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-white text-sm focus:outline-none">
+        </div>
+        <div class="flex-1">
+            <label class="block text-[10px] text-gray-400 uppercase font-bold mb-2">Origem / Pasta</label>
+            <div class="flex gap-2">
+                <select id="bulk_plat" class="bg-gray-900 border border-gray-600 rounded-lg p-3 text-white text-xs">{% for p in dropdown_plataformas %}<option value="{{ p.nome }}">{{ p.nome }}</option>{% endfor %}</select>
+                <select id="bulk_cat" class="bg-gray-900 border border-gray-600 rounded-lg p-3 text-white text-xs">{% for c in db_categorias %}<option value="{{ c.nome }}">{{ c.nome }}</option>{% endfor %}</select>
+            </div>
+        </div>
+        <button onclick="applyBulk()" class="bg-gray-700 hover:bg-gray-600 text-white px-6 py-3 rounded-lg text-xs font-bold uppercase tracking-widest transition">Aplicar</button>
+        <button onclick="saveImport()" id="btn-save-import" class="bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-3 rounded-lg text-sm font-bold uppercase shadow-lg">✅ Salvar Novos</button>
+    </div>
+</div>
+
+<div id="inv-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6 pb-12"></div>
+
+<script>
+    let fetchedInventory = [];
+    async function fetchSteamInv() {
+        let input = document.getElementById('steam_url').value.trim(); if(!input) return;
+        let btn = document.getElementById('btn-fetch-inv'); let err = document.getElementById('steam_error');
+        btn.innerText = "Buscando..."; btn.disabled = true; err.classList.add('hidden');
+        try {
+            let res = await fetch(`/api/fetch_inventory?steam_input=${encodeURIComponent(input)}`);
+            let data = await res.json();
+            if(data.success) { fetchedInventory = data.items; renderGrid(); document.getElementById('bulk-actions').classList.remove('hidden'); } 
+            else { err.innerText = "❌ " + data.error; err.classList.remove('hidden'); }
+        } catch(e) { err.innerText = "❌ Erro."; err.classList.remove('hidden'); }
+        btn.innerText = "Buscar Skins"; btn.disabled = false;
+    }
+
+    function renderGrid() {
+        let grid = document.getElementById('inv-grid'); grid.innerHTML = "";
+        fetchedInventory.forEach((item, index) => {
+            let isDup = item.ja_importado;
+            grid.innerHTML += `
+            <div class="bg-gray-800 border-2 ${isDup ? 'border-emerald-500/30 opacity-50' : 'border-gray-700'} rounded-xl p-4 relative flex flex-col items-center group transition shadow-xl">
+                ${isDup ? '<span class="absolute top-2 left-2 bg-emerald-600 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase z-10 text-white shadow">No Banco</span>' : ''}
+                <input type="checkbox" id="chk_${index}" class="steam-chk absolute top-3 right-3 w-5 h-5 text-blue-600 bg-gray-900 border-gray-500 rounded" ${isDup ? '' : 'checked'}>
+                <div class="h-24 w-full flex items-center justify-center mb-3"><img src="${item.icon}" class="max-h-full object-contain group-hover:scale-110 transition duration-300"></div>
+                <span class="text-[10px] text-gray-200 text-center font-bold h-8 overflow-hidden leading-tight w-full mb-3" title="${item.hash_name}">${item.hash_name}</span>
+                <div class="w-full space-y-2 border-t border-gray-700 pt-3">
+                    <input type="number" step="0.01" id="cost_${index}" placeholder="Custo ($)" class="w-full bg-gray-900 border border-gray-600 rounded p-1.5 text-white text-xs font-mono">
+                    <div class="grid grid-cols-2 gap-2">
+                        <select id="plat_${index}" class="w-full bg-gray-900 border border-gray-600 rounded p-1 text-gray-300 text-[9px]">{% for p in dropdown_plataformas %}<option value="{{ p.nome }}">{{ p.nome }}</option>{% endfor %}<option value="Steam">Steam</option></select>
+                        <select id="cat_${index}" class="w-full bg-gray-900 border border-gray-600 rounded p-1 text-gray-300 text-[9px]">{% for c in db_categorias %}<option value="{{ c.nome }}">{{ c.nome }}</option>{% endfor %}</select>
+                    </div>
+                </div>
+            </div>`;
+        });
+    }
+
+    function applyBulk() {
+        let bCost = document.getElementById('bulk_cost').value; let bPlat = document.getElementById('bulk_plat').value; let bCat = document.getElementById('bulk_cat').value;
+        fetchedInventory.forEach((item, idx) => {
+            let chk = document.getElementById('chk_' + idx);
+            if(chk && chk.checked) {
+                if(bCost !== "") document.getElementById('cost_' + idx).value = bCost;
+                document.getElementById('plat_' + idx).value = bPlat; document.getElementById('cat_' + idx).value = bCat;
+            }
+        });
+    }
+
+    async function saveImport() {
+        let items = []; let date = "{{ data_hoje }}";
+        fetchedInventory.forEach((it, idx) => {
+            let chk = document.getElementById('chk_' + idx);
+            if(chk && chk.checked) {
+                items.push({ asset_id: it.asset_id, nome: it.hash_name, custo: parseFloat(document.getElementById('cost_'+idx).value)||0, plataforma: document.getElementById('plat_'+idx).value, categoria: document.getElementById('cat_'+idx).value, data: date });
+            }
+        });
+        if(items.length === 0) return;
+        let btn = document.getElementById('btn-save-import'); btn.innerText = "Salvando..."; btn.disabled = true;
+        try {
+            let res = await fetch('/api/save_imported', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ items: items }) });
+            if((await res.json()).success) { window.location.href = "/"; }
+        } catch(e) { btn.innerText = "Salvar Novos"; btn.disabled = false; }
+    }
+</script>
+{% endblock %}

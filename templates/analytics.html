@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="flex items-center gap-3 mb-6">
+    <span class="text-3xl">📊</span><h2 class="text-2xl font-bold text-white tracking-wide">Business Intelligence</h2>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div class="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-xl flex flex-col items-center justify-center relative overflow-hidden group">
+        <div class="absolute inset-0 bg-blue-900/10 opacity-0 group-hover:opacity-100 transition duration-500"></div>
+        <h3 class="text-gray-400 text-xs uppercase tracking-widest font-bold z-10">Patrimônio Market Value</h3>
+        <div class="text-4xl font-black font-mono text-emerald-400 mt-3 drop-shadow z-10">${{ total_caixa }}</div>
+    </div>
+    <div class="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-xl flex flex-col items-center justify-center relative overflow-hidden group">
+        <div class="absolute inset-0 bg-purple-900/10 opacity-0 group-hover:opacity-100 transition duration-500"></div>
+        <h3 class="text-gray-400 text-xs uppercase tracking-widest font-bold z-10">Lucro Realizado (Trades)</h3>
+        <div class="text-4xl font-black font-mono {{ trade_profit_color }} mt-3 drop-shadow z-10">${{ trade_profit }}</div>
+    </div>
+    <div class="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-xl flex flex-col items-center justify-center relative overflow-hidden group">
+        <div class="absolute inset-0 bg-gray-700/20 opacity-0 group-hover:opacity-100 transition duration-500"></div>
+        <h3 class="text-gray-400 text-xs uppercase tracking-widest font-bold z-10">Ativos Em Banco</h3>
+        <div class="text-4xl font-black font-mono text-blue-400 mt-3 drop-shadow z-10">{{ count_ativos }}</div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+    <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-xl">
+        <h3 class="text-gray-300 font-bold mb-4 uppercase text-xs tracking-widest">Alocação de Capital (Por Aba)</h3>
+        <div class="h-64 flex justify-center"><canvas id="catChart"></canvas></div>
+    </div>
+
+    <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-xl">
+        <h3 class="text-gray-300 font-bold mb-4 uppercase text-xs tracking-widest">Risco de Plataforma (Origem)</h3>
+        <div class="h-64 flex justify-center"><canvas id="platChart"></canvas></div>
+    </div>
+</div>
+
+<div class="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-xl mb-12">
+    <h3 class="text-gray-300 font-bold mb-4 uppercase text-xs tracking-widest">Top 5 Melhores Operações Fechadas ($)</h3>
+    <div class="h-64"><canvas id="tradeChart"></canvas></div>
+</div>
+
+<script>
+    // Gráfico de Categorias (Pastas)
+    new Chart(document.getElementById('catChart'), {
+        type: 'doughnut',
+        data: {
+            labels: {{ chart_cat_labels | tojson }},
+            datasets: [{ data: {{ chart_cat_data | tojson }}, backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444'], borderWidth: 0 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#e2e8f0' } } }, cutout: '70%' }
+    });
+
+    // Gráfico de Plataformas
+    new Chart(document.getElementById('platChart'), {
+        type: 'pie',
+        data: {
+            labels: {{ chart_plat_labels | tojson }},
+            datasets: [{ data: {{ chart_plat_data | tojson }}, backgroundColor: ['#6366f1', '#ec4899', '#14b8a6', '#f97316', '#64748b'], borderWidth: 0 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#e2e8f0' } } } }
+    });
+
+    // Gráfico de Top Trades
+    new Chart(document.getElementById('tradeChart'), {
+        type: 'bar',
+        data: {
+            labels: {{ chart_trade_labels | tojson }},
+            datasets: [{ label: 'Lucro Líquido ($)', data: {{ chart_trade_data | tojson }}, backgroundColor: '#10b981', borderRadius: 4 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: { color: '#334155' }, ticks: { color: '#94a3b8' } }, x: { grid: { display: false }, ticks: { color: '#94a3b8' } } }, plugins: { legend: { display: false } } }
+    });
+</script>
+{% endblock %}

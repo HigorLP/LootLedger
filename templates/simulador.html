@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="flex items-center gap-3 mb-6">
+    <span class="text-3xl">🧮</span><h2 class="text-2xl font-bold text-white tracking-wide">Centro de Simulação & Inteligência</h2>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    <div class="bg-gray-800 p-8 rounded-xl border border-blue-600/50 shadow-2xl flex flex-col justify-between relative overflow-hidden">
+        <div class="absolute top-0 right-0 bg-blue-600 text-white text-[10px] font-bold px-3 py-1 uppercase tracking-widest rounded-bl-lg shadow">Market API Engine</div>
+        <div>
+            <h3 class="text-xl font-bold mb-6 text-white flex items-center gap-2"><span>📡</span> Consultar Steam Global</h3>
+            <div class="space-y-5 bg-gray-900 p-6 rounded-xl border border-gray-700 shadow-inner">
+                <div>
+                    <label class="block text-xs text-gray-400 uppercase font-bold tracking-widest mb-2">Nome Base da Skin (Inglês)</label>
+                    <input type="text" id="api_name" placeholder="Ex: AWP | Asiimov" class="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 text-white text-lg focus:outline-none focus:border-blue-500 transition shadow">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 uppercase font-bold tracking-widest mb-2">Exterior (Wear)</label>
+                    <select id="api_wear" class="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:border-blue-500 transition shadow">
+                        <option value="(Factory New)">Factory New (FN)</option><option value="(Minimal Wear)">Minimal Wear (MW)</option>
+                        <option value="(Field-Tested)" selected>Field-Tested (FT)</option><option value="(Well-Worn)">Well-Worn (WW)</option>
+                        <option value="(Battle-Scarred)">Battle-Scarred (BS)</option><option value="">Item Sem Wear (Caixa/Adesivo)</option>
+                    </select>
+                </div>
+                <button onclick="fetchSimAPI()" id="btn-sim-api" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold uppercase tracking-widest shadow-lg transition mt-4">Extrair Menor Preço (USD)</button>
+                
+                <div id="api_result_box" class="hidden bg-gray-800 border-2 border-emerald-600/50 p-6 rounded-xl text-center mt-6 shadow-2xl relative overflow-hidden">
+                    <div class="absolute inset-0 bg-emerald-900/10 pointer-events-none"></div>
+                    <span class="text-xs text-gray-400 uppercase font-bold tracking-widest block mb-2 relative z-10">Lowest Price Found</span>
+                    <div id="api_price_display" class="text-4xl font-black text-emerald-400 relative z-10 drop-shadow-md">$0.00</div>
+                    <button onclick="usarPrecoAPI()" class="bg-gray-900 border border-gray-600 text-xs text-white hover:text-emerald-400 uppercase font-bold tracking-widest py-2 px-4 rounded mt-4 relative z-10 transition shadow hover:border-emerald-600">Puxar para Calculadora ↓</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-2xl relative">
+        <h3 class="text-xl font-bold mb-6 text-white flex items-center gap-2"><span>📈</span> Projetor de Margem Líquida</h3>
+        
+        <div class="flex gap-4 mb-8 bg-gray-900 p-6 rounded-xl border border-gray-700 shadow-inner">
+            <div class="flex-1">
+                <label class="block text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-2">Custo de Aquisição ($)</label>
+                <input type="number" id="sim_compra" placeholder="0.00" class="w-full bg-gray-800 border-2 border-transparent focus:border-emerald-500 rounded-lg p-3 text-white text-xl font-mono focus:outline-none transition shadow" oninput="calcSim()">
+            </div>
+            <div class="flex-1">
+                <label class="block text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-2">Venda (Anúncio Bruto) ($)</label>
+                <input type="number" id="sim_venda" placeholder="0.00" class="w-full bg-gray-800 border-2 border-transparent focus:border-blue-500 rounded-lg p-3 text-white text-xl font-mono focus:outline-none transition shadow" oninput="calcSim()">
+            </div>
+        </div>
+
+        <div class="border-t border-gray-700 pt-6">
+            <h4 class="text-xs text-gray-400 uppercase tracking-widest font-bold mb-4 flex items-center justify-between">
+                <span>Resultado Líquido Realizado (Pós-Taxas)</span>
+                <span class="text-[9px] bg-gray-700 px-2 py-1 rounded text-white">Auto-Calc</span>
+            </h4>
+            
+            <div class="grid grid-cols-2 gap-4">
+                {% for p in dropdown_plataformas %}{% if p.taxa > 0 %}
+                <div class="bg-gray-900 p-5 rounded-xl border border-gray-700 shadow-lg relative overflow-hidden group hover:border-gray-500 transition">
+                    <span class="text-[10px] text-gray-400 uppercase tracking-widest font-bold block mb-1">{{ p.nome }} <span class="opacity-50">({{ p.taxa }}%)</span></span>
+                    <div id="res_{{ p.id }}" class="text-2xl font-black text-gray-500 font-mono tracking-tight">$0.00</div>
+                    <div id="roi_{{ p.id }}" class="text-xs font-bold text-gray-600 mt-1">0.00% ROI</div>
+                </div>
+                {% endif %}{% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const fees = { {% for p in dropdown_plataformas %} "{{ p.id }}": {{ p.taxa }}, {% endfor %} };
+    
+    function calcSim() {
+        let c = parseFloat(document.getElementById('sim_compra').value) || 0; 
+        let v = parseFloat(document.getElementById('sim_venda').value) || 0;
+        for (let id in fees) {
+            let l = (v * (1 - (fees[id]/100))) - c; 
+            let r = (c === 0) ? 0 : (l/c)*100;
+            let rE = document.getElementById('res_'+id); 
+            let roE = document.getElementById('roi_'+id);
+            if(rE) { 
+                rE.innerText = "$" + l.toFixed(2); 
+                rE.className = l > 0 ? "text-2xl font-black text-emerald-400 font-mono tracking-tight drop-shadow" : (l < 0 ? "text-2xl font-black text-red-400 font-mono tracking-tight drop-shadow" : "text-2xl font-black text-gray-500 font-mono tracking-tight"); 
+                roE.innerText = r.toFixed(2) + "% ROI";
+                roE.className = l > 0 ? "text-xs font-bold text-emerald-500/70 mt-1" : (l < 0 ? "text-xs font-bold text-red-500/70 mt-1" : "text-xs font-bold text-gray-600 mt-1");
+            }
+        }
+    }
+
+    let lastApiPrice = 0;
+    async function fetchSimAPI() {
+        let name = document.getElementById('api_name').value.trim(); 
+        let wear = document.getElementById('api_wear').value;
+        let btn = document.getElementById('btn-sim-api');
+        if(!name) { alert("⚠️ Insira o nome base da skin para buscar."); return; }
+        
+        let hashName = wear !== "" ? name + " " + wear : name;
+        btn.innerHTML = `<span class="animate-spin text-xl inline-block">↻</span> Extraindo...`; btn.disabled = true;
+        
+        try {
+            let r = await fetch(`/api/market?hash_name=${encodeURIComponent(hashName)}`); 
+            let d = await r.json();
+            if(d.success) { 
+                lastApiPrice = d.price; 
+                document.getElementById('api_price_display').innerText = "$" + lastApiPrice.toFixed(2); 
+                document.getElementById('api_result_box').classList.remove('hidden'); 
+            } else { alert("❌ Erro Steam: " + d.error); }
+        } catch(e) { alert("❌ Falha de rede ao contatar servidor interno."); }
+        btn.innerText = "Extrair Menor Preço (USD)"; btn.disabled = false;
+    }
+
+    function usarPrecoAPI() { document.getElementById('sim_compra').value = lastApiPrice.toFixed(2); calcSim(); }
+</script>
+{% endblock %}

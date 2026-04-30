@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% from '_tabela_inventario.html' import render_inventory_table with context %}
+
+{% block content %}
+    {{ render_inventory_table(items_container, True) }}
+{% endblock %}

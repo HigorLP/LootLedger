@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from '_tabela_inventario.html' import render_inventory_table with context %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+    
+    <div class="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-xl lg:col-span-2 relative overflow-hidden">
+        <div class="absolute top-0 right-0 bg-blue-600 text-white text-[10px] font-bold px-3 py-1 uppercase tracking-widest rounded-bl-lg shadow">Registro Manual</div>
+        <h2 class="text-xl font-bold mb-6 text-white flex items-center gap-2"><span>⚡</span> Entrada Rápida de Ativos</h2>
+        <form action="/add" method="POST" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="col-span-2 md:col-span-4"><label class="block text-[10px] text-gray-400 uppercase font-bold mb-1 tracking-widest">Nome da Skin (Inglês Exato p/ API)</label><input type="text" name="nome_item" placeholder="Ex: AK-47 | Slate (Field-Tested)" required class="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-white text-sm focus:outline-none focus:border-blue-500 transition shadow-inner"></div>
+            <div><label class="block text-[10px] text-gray-400 uppercase font-bold mb-1 tracking-widest">Origem</label><select name="plataforma" class="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-white text-sm focus:outline-none">{% for p in dropdown_plataformas %}<option value="{{ p.nome }}">{{ p.nome }}</option>{% endfor %}</select></div>
+            <div><label class="block text-[10px] text-gray-400 uppercase font-bold mb-1 tracking-widest">Preço ($)</label><input type="number" step="0.01" name="preco_compra" placeholder="0.00" required class="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-white text-sm font-bold focus:outline-none focus:border-blue-500"></div>
+            <div><label class="block text-[10px] text-gray-400 uppercase font-bold mb-1 tracking-widest">Data</label><input type="date" name="data_compra" value="{{ data_hoje }}" required class="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-white text-sm focus:outline-none"></div>
+            <div><label class="block text-[10px] text-gray-400 uppercase font-bold mb-1 tracking-widest">Pasta (Aba)</label><select name="categoria" class="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-white text-sm focus:outline-none">{% for c in db_categorias %}<option value="{{ c.nome }}">{{ c.nome }}</option>{% endfor %}</select></div>
+            <div class="col-span-2 md:col-span-4 mt-2"><button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-lg shadow-lg uppercase tracking-widest text-sm transition">Registrar Ativo no Banco</button></div>
+        </form>
+    </div>
+
+    <div class="bg-gray-800 p-8 rounded-xl border border-yellow-700/60 shadow-xl relative overflow-hidden flex flex-col justify-between">
+        <div class="absolute top-0 right-0 bg-yellow-600 text-white text-[10px] font-bold px-3 py-1 uppercase tracking-widest rounded-bl-lg shadow">CS2 In-Game</div>
+        <div>
+            <h2 class="text-xl font-bold mb-6 text-yellow-500 flex items-center gap-2"><span>⭐</span> Resgate Arsenal</h2>
+            <form action="/add_arsenal" method="POST" class="flex flex-col gap-4">
+                <div><label class="block text-[10px] text-gray-400 uppercase font-bold mb-1 tracking-widest">Nome do Drop</label><input type="text" name="nome_item" placeholder="Ex: M4A1-S | Fade" required class="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-white text-sm focus:outline-none focus:border-yellow-600 transition"></div>
+                <div class="flex gap-4">
+                    <div class="flex-1"><label class="block text-[10px] text-gray-400 uppercase font-bold mb-1 tracking-widest">Pasta</label><select name="categoria" class="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-white text-sm focus:outline-none">{% for c in db_categorias %}<option value="{{ c.nome }}">{{ c.nome }}</option>{% endfor %}</select></div>
+                    <div class="w-24"><label class="block text-[10px] text-yellow-500 uppercase font-bold mb-1 tracking-widest">Estrelas</label><input type="number" id="arsenal_estrelas" name="estrelas_gasto" placeholder="Qtd" required onkeyup="calcArsenal()" class="w-full bg-gray-900 border-2 border-yellow-600 rounded-lg p-2.5 text-yellow-400 font-bold text-center focus:outline-none text-lg"></div>
+                </div>
+                <input type="hidden" name="data_compra" value="{{ data_hoje }}">
+                <div class="mt-2">
+                    <button type="submit" class="w-full bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-3 rounded-lg shadow-lg uppercase tracking-widest text-xs transition">Debitar ⭐ e Salvar</button>
+                    <p id="arsenal_custo_label" class="text-[10px] text-gray-500 text-center mt-2 font-mono font-bold bg-gray-900 p-1.5 rounded border border-gray-700">Custo no Sistema: ~$0.00 USD</p>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    function calcArsenal() { 
+        let e = parseInt(document.getElementById('arsenal_estrelas').value) || 0; 
+        document.getElementById('arsenal_custo_label').innerText = "Custo no Sistema: ~$" + (e * 0.4125).toFixed(2) + " USD"; 
+    }
+</script>
+
+{{ render_inventory_table(items) }}
+
+{% if active_tab == 'dashboard' %}
+    {{ render_inventory_table(items_container, True) }}
+{% endif %}
+
+{% endblock %}
